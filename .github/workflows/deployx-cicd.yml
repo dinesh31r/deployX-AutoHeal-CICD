@@ -1,0 +1,26 @@
+name: deployX CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: |
+        docker build -t deployx:autoheal -f docker/Dockerfile .
+
+    - name: Kubernetes Deploy (Simulation)
+      run: |
+        echo "kubectl apply -f k8s/"
+        echo "Deployment triggered successfully"

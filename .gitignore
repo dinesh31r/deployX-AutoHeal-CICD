@@ -1,0 +1,13 @@
+# Node
+node_modules/
+npm-debug.log
+
+# Environment
+.env
+
+# Kubernetes
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

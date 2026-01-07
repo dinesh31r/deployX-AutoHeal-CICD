@@ -1,26 +1,41 @@
-name: deployX CI/CD Pipeline
+name: DeployX CI/CD Pipeline
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      pipelineType:
+        description: "Choose pipeline type"
+        required: true
+        default: "CI_ONLY"
+        type: choice
+        options:
+          - CI_ONLY
+          - CI_CD
 
 jobs:
-  build-and-deploy:
+  ci:
+    name: Continuous Integration
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Docker
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build Docker image
-      run: |
-        docker build -t deployx:autoheal -f docker/Dockerfile .
+      - name: Build Docker image
+        run: |
+          docker build -t deployx:autoheal -f docker/Dockerfile .
 
-    - name: Kubernetes Deploy (Simulation)
-      run: |
-        echo "kubectl apply -f k8s/"
-        echo "Deployment triggered successfully"
+  cd:
+    name: Continuous Deployment
+    runs-on: ubuntu-latest
+    needs: ci
+    if: ${{ github.event.inputs.pipelineType == 'CI_CD' }}
+
+    steps:
+      - name: Deploy to Kubernetes (Simulation)
+        run: |
+          echo "kubectl apply -f k8s/"
+          echo "Deployment triggered via user-selected CI_CD pipeline"

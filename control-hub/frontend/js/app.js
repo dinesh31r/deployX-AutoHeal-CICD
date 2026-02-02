@@ -115,6 +115,27 @@ function deployImage() {
     });
 }
 
+function deployCustomImage() {
+  const image = prompt("Enter image name (e.g., fakeimage:notreal)");
+  if (!image) return;
+
+  fetch(`${API}/k8s/deploy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image })
+  })
+    .then(res => res.json())
+    .then(d => {
+      document.getElementById("k8s-output").textContent =
+        `✅ Deployed ${image} - Check pods for status`;
+      listPods();
+    })
+    .catch(() => {
+      document.getElementById("k8s-output").textContent =
+        "❌ Deployment failed";
+    });
+}
+
 function cleanupFailedPods() {
   if (!confirm("Delete all ImagePullBackOff pods?")) return;
 

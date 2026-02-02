@@ -35,16 +35,16 @@ docker build -t ${imageName} -f ${DOCKERFILE} ${BUILD_CONTEXT}
 
 /* ---------- LIST IMAGES ---------- */
 router.get("/images", (req, res) => {
-  exec(`docker images --format "{{json .}}"`, (err, stdout) => {
+  const cmd = `eval $(minikube docker-env) && docker images --format "{{json .}}"`;
+  
+  exec(cmd, (err, stdout) => {
     if (err) {
       logger("docker", "LIST_IMAGES", "FAILED", err.message);
       return res.status(500).json({ error: err.message });
     }
 
-    const images = stdout
-      .trim()
-      .split("\n")
-      .map(line => JSON.parse(line));
+    const lines = stdout.trim().split("\n").filter(line => line);
+    const images = lines.map(line => JSON.parse(line));
 
     logger("docker", "LIST_IMAGES", "SUCCESS", `Count: ${images.length}`);
     res.json({ images });

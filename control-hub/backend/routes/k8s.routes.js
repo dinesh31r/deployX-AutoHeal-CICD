@@ -29,14 +29,26 @@ router.get("/pods", (req, res) => {
 router.delete("/pods/:name", (req, res) => {
   const pod = req.params.name;
 
-  exec(`${KUBECTL} delete pod ${pod}`, (err, stdout, stderr) => {
+  // Extract deployment name from pod (remove random suffix like -xxxxx-xxxxx)
+  const deploymentName = pod.replace(/-[a-z0-9]+-[a-z0-9]+$/, "");
+
+  // Delete the deployment instead of just the pod
+  exec(`${KUBECTL} delete deployment ${deploymentName} --ignore-not-found`, (err, stdout, stderr) => {
     if (err) {
-      logger("kubernetes", "DELETE_POD", "FAILED", stderr);
-      return res.status(500).json({ error: stderr });
+      // Fallback: try deleting just the pod if no deployment found
+      exec(`${KUBECTL} delete pod ${pod}`, (err2, stdout2, stderr2) => {
+        if (err2) {
+          logger("kubernetes", "DELETE_POD", "FAILED", stderr2);
+          return res.status(500).json({ error: stderr2 });
+        }
+        logger("kubernetes", "DELETE_POD", "SUCCESS", pod);
+        res.json({ message: `Pod ${pod} deleted` });
+      });
+      return;
     }
 
-    logger("kubernetes", "DELETE_POD", "SUCCESS", pod);
-    res.json({ message: `Pod ${pod} deleted` });
+    logger("kubernetes", "DELETE_DEPLOYMENT", "SUCCESS", deploymentName);
+    res.json({ message: `Deployment ${deploymentName} and its pods deleted` });
   });
 });
 
@@ -87,7 +99,7 @@ EOF
 /* ---------- AUTO-DELETE FAILED IMAGE PODS ---------- */
 router.delete("/cleanup-failed", (req, res) => {
   exec(
-    `${KUBECTL} get pods --no-headers | grep -E "ImagePullBackOff|ErrImagePull" | awk '{print $1}'`,
+    `${KUBECTL} get pods --no-headers | grep -E "ImagePullBackOff|ErrImagePull|ErrImageNeverPull|InvalidImageName" | awk '{print $1}'`,
     (err, stdout) => {
       if (err) {
         logger("kubernetes", "AUTO_CLEAN", "FAILED", err.message);
@@ -103,16 +115,28 @@ router.delete("/cleanup-failed", (req, res) => {
         return res.json({ message: "No failed pods found" });
       }
 
-      exec(`${KUBECTL} delete pod ${pods.join(" ")}`, () => {
+      // Extract deployment names from pod names (remove -xxxxx-xxxxx suffix)
+      const deployments = [...new Set(pods.map(pod => 
+        pod.replace(/-[a-z0-9]+-[a-z0-9]+$/, "")
+      ))];
+
+      // Delete deployments (which will also delete the pods)
+      exec(`${KUBECTL} delete deployment ${deployments.join(" ")} --ignore-not-found`, (err2) => {
+        if (err2) {
+          // Fallback: try deleting just the pods
+          exec(`${KUBECTL} delete pod ${pods.join(" ")} --force --grace-period=0`, () => {});
+        }
+        
         logger(
           "kubernetes",
           "AUTO_CLEAN",
           "SUCCESS",
-          `Deleted: ${pods.join(", ")}`
+          `Deleted deployments: ${deployments.join(", ")}`
         );
 
         res.json({
-          message: "Failed pods deleted",
+          message: "Failed deployments and pods deleted",
+          deployments,
           pods
         });
       });

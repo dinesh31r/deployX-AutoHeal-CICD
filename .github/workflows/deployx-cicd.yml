@@ -31,7 +31,7 @@ jobs:
       - name: Build Docker image (CI validation)
         run: |
           echo "Running CI pipeline"
-          docker build -t deployx:autoheal -f docker/Dockerfile .
+          docker build -t deployx:autoheal -f base-pipeline/docker/Dockerfile base-pipeline/
 
   cd:
     name: Continuous Deployment

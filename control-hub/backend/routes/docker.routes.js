@@ -8,6 +8,24 @@ const router = express.Router();
 const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 const DOCKERFILE = path.join(PROJECT_ROOT, "base-pipeline/docker/Dockerfile");
 const BUILD_CONTEXT = path.join(PROJECT_ROOT, "base-pipeline");
+const ANSIBLE_INVENTORY = path.join(PROJECT_ROOT, "base-pipeline/ansible/inventory");
+const ANSIBLE_PLAYBOOK = path.join(PROJECT_ROOT, "base-pipeline/ansible/deploy.yml");
+
+/* ---------- HELPER: RUN ANSIBLE DEPLOYMENT ---------- */
+const runAnsibleDeployment = () => {
+  return new Promise((resolve, reject) => {
+    const cmd = `ansible-playbook -i ${ANSIBLE_INVENTORY} ${ANSIBLE_PLAYBOOK}`;
+    exec(cmd, (error, stdout, stderr) => {
+      if (error) {
+        logger("ansible", "AUTO_DEPLOY", "FAILED", stderr);
+        reject(stderr);
+      } else {
+        logger("ansible", "AUTO_DEPLOY", "SUCCESS", "Triggered after Docker operation");
+        resolve(stdout);
+      }
+    });
+  });
+};
 
 /* ---------- BUILD IMAGE (MINIKUBE DOCKER) ---------- */
 router.post("/build", (req, res) => {
@@ -22,20 +40,28 @@ eval $(minikube docker-env) &&
 docker build -t ${imageName} -f ${DOCKERFILE} ${BUILD_CONTEXT}
 `;
 
-  exec(cmd, (err, stdout, stderr) => {
+  exec(cmd, async (err, stdout, stderr) => {
     if (err) {
       logger("docker", "BUILD", "FAILED", stderr);
       return res.status(500).json({ error: stderr });
     }
 
     logger("docker", "BUILD", "SUCCESS", imageName);
-    res.json({ message: "Image built successfully", image: imageName });
+    
+    // Run Ansible deployment after successful build
+    try {
+      await runAnsibleDeployment();
+      res.json({ message: "Image built successfully and Ansible deployment triggered", image: imageName, ansibleDeployed: true });
+    } catch (ansibleErr) {
+      res.json({ message: "Image built successfully but Ansible deployment failed", image: imageName, ansibleDeployed: false, ansibleError: ansibleErr });
+    }
   });
 });
 
 /* ---------- LIST IMAGES ---------- */
 router.get("/images", (req, res) => {
-  const cmd = `eval $(minikube docker-env) && docker images --format "{{json .}}"`;
+  // Use custom format to get exact timestamp
+  const cmd = `eval $(minikube docker-env) && docker images --format "{{.Repository}}|{{.Tag}}|{{.ID}}|{{.CreatedAt}}|{{.Size}}"`;
   
   exec(cmd, (err, stdout) => {
     if (err) {
@@ -44,7 +70,10 @@ router.get("/images", (req, res) => {
     }
 
     const lines = stdout.trim().split("\n").filter(line => line);
-    const images = lines.map(line => JSON.parse(line));
+    const images = lines.map(line => {
+      const [Repository, Tag, ID, CreatedAt, Size] = line.split("|");
+      return { Repository, Tag, ID, CreatedAt, Size };
+    });
 
     logger("docker", "LIST_IMAGES", "SUCCESS", `Count: ${images.length}`);
     res.json({ images });
